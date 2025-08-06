@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual Environment
+venv/
+env/
+ENV/
+venv/
+api_venv/
+.env/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment Variables
+.env
+*.env
+
+# Logs
+*.log
+
+# Deployment
+.vercel/
+
+/uploads/
