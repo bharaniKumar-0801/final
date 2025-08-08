@@ -88,8 +88,8 @@ model_manager.init_models()  # Initialize models
 
     ##
 # def ask_question():
-@app.route('/ask', methods=['POST'])
-async def ask_question(question):
+# @app.route('/ask', methods=['POST'])
+async def ask_question(question, chat_id=None):
     print('before json')
     # data = request.json
     # print('data>>>>>>>',data)
@@ -99,7 +99,7 @@ async def ask_question(question):
     # question = data['question']
     # logger.info(f"Received question: {question}")
     try:
-        response =  await process_query(question)
+        response =  await process_query(question, chat_id)
         logger.info(f"Generated response: {response}")
         # response_json = {'response': response}
         # logger.info(f"Sending JSON response: {response_json}")

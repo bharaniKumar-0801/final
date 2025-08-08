@@ -34,7 +34,7 @@ def extract_urls(text):
 def extract_dates(text):
     return re.findall(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}', text)
 
-def enrich_tokens(text: str):
+async def enrich_tokens(text: str):
     base = clean_and_tokenize(text)
     enriched = (
         extract_named_entities(text) +

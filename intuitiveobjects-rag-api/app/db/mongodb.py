@@ -65,6 +65,11 @@ def message_collection():
     return get_collection("messages")
 
 
+def user_query_collection():
+    """Get the user query collection."""
+    return get_collection("user_queries")
+
+
 def organization_user_collection():
     """Get the organization user collection."""
     return get_collection("organization_users")

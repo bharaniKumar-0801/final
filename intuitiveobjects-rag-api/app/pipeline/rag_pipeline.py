@@ -7,8 +7,8 @@ import os
 
 from .models import get_model_manager 
 from .bm25.bm25_impl import BM25Index
-
-# Set up logging
+from app.utils.llm import expand_user_query 
+# Set up loggings
 import logging
 from .logger_config import setup_logger
 logger = setup_logger(__name__, log_level=logging.INFO) 
@@ -339,3 +339,31 @@ def initialize_models():
     # print(f"Query: {test_query}")
     # print(f"Response: {result}")
 """"""
+
+
+from app.db.mongodb import user_query_collection  # Adjust import path if needed
+logger = logging.getLogger(__name__)
+async def expand_query_with_context(chat_id: str, user_query: str) -> str:
+    try:
+        # Fetch messages ordered by creation time
+        messages = await user_query_collection().find(
+            {"chat_id": chat_id}
+        ).sort("created_at", 1).to_list(length=100)
+        # Convert messages into list of dicts with 'role' and 'content'
+        conversation = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in messages
+            if msg.get("role") in ["user", "assistant"]
+        ]
+        # Log the conversation type and preview of content
+        logger.info(f"[expand_query_with_context] Conversation type: {type(conversation)}")
+        logger.debug(f"[expand_query_with_context] First 2 messages: {conversation[:2]}")
+        # Call the LLM to expand the user query
+        expanded_query = await expand_user_query(conversation, user_query) 
+        # metadata_query_result = metadata_query(expanded_query)
+        # logger.info(f"[expand_query_with_context] Metadata query result: {metadata_query_result}")
+        logger.info(f"[expand_query_with_context] Expanded query: {expanded_query}")
+        return expanded_query
+    except Exception as e:
+        logger.error(f"[expand_query_with_context] Failed to expand query: {str(e)}", exc_info=True)
+        return user_query  # fallback to original query if expansion fails

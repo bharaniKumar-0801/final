@@ -11,6 +11,10 @@ from app.pipeline.models import get_model_manager, llm_generate_response
 from app.pipeline.rag_pipeline import similarity_search
 from app.pipeline.keyword_search.text_utils import enrich_tokens
 from app.pipeline.keyword_search.bm25_engine import BM25
+# from app.services.chat_service import metadata_query 
+# from app.services.chat_service import expand_user_query
+from app.pipeline.rag_pipeline import expand_query_with_context 
+from app.utils.llm import metadata_query
 from sentence_transformers import CrossEncoder
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -34,7 +38,7 @@ def remove_markdown(text: str) -> str:
     # Remove asterisks used for bold/italic
     return re.sub(r"\*+", "", text)
 
-async def process_query(query: str) -> str:
+async def process_query(query: str, chat_id: str) -> str:
     """
     Handles the full RAG pipeline:
     1. Loads configs and sets the active model.
@@ -48,57 +52,65 @@ async def process_query(query: str) -> str:
         model_name = app_config.get("llm_model")
         temperature = app_config.get("temperature", 0.7)
 
+        # model_manager.set_active_model(model_name)
+        # active_model = model_manager.get_active_model()
+
+        expanded_query = await expand_query_with_context(chat_id, query) 
+
+        logger.info(f"[process_query] expanded_query: {expanded_query}")
+
+        metadata_query_result = await enrich_tokens(expanded_query)
+
+        logger.info(f"[process_query] Metadata query: {metadata_query_result}")
+
+        logger.info(f"[process_query] Metadata query result: {metadata_query_result}")
+
         model_manager.set_active_model(model_name)
         active_model = model_manager.get_active_model()
-
         # 2. Vector Search (Chroma)
         vector_results = similarity_search(query)[:5]
         logger.info(f"Vector search found {vector_results} results.")
 
-        # 3. BM25 Keyword Search
-        bm25_chunks = run_bm25_keyword_search(query, top_n=5) 
-        logger.info(f"BM25 search returned {bm25_chunks} results.")
+        def metadata_match(chunk, keywords):
+            metadata_values = " ".join(str(v).lower() for v in chunk.get("metadata", {}).values())
+            return any(str(kw).lower() in metadata_values for kw in keywords)
 
-        # 4. Combine results
-        top_chunks = vector_results + bm25_chunks
-        logger.info(f"Combined top chunks: {top_chunks} results.") 
+        filtered_vector_results = [
+            chunk for chunk in vector_results
+            if metadata_match(chunk, metadata_query_result)
+        ]
+        logger.info(f"Filtered vector results: {filtered_vector_results}")
+
+        # # 3. BM25 Keyword Search
+        # bm25_chunks = await run_bm25_keyword_search(query, top_n=5) 
+        # logger.info(f"BM25 search returned {bm25_chunks} results.")
+
+        # # 4. Combine results
+        # top_chunks = filtered_vector_results + bm25_chunks
+        # logger.info(f"Combined top chunks: {top_chunks} results.") 
+
+  
 
         # ranked_chunks = rerank_results(query, top_chunks, top_k=5)
         # logger.info(f"Reranked top chunks: {ranked_chunks} results.")
-        # context = "\n".join([chunk["text"] for chunk in ranked_chunks])
-        # enriched_query = f"{query}\n\nContext:\n{context}"
-    
-        # logger.debug(f"Enriched query:\n{enriched_query}")
 
-        # # 5. Generate response
-        # response = llm_generate_response(active_model, enriched_query, temperature=temperature)
-        # return response 
+        # # Build context: vector results with metadata, BM25 with just text
+        # context_lines = []
+        # for chunk in ranked_chunks:
+        #     text = chunk["text"]
+        #     metadata = chunk.get("metadata")
+        #     if metadata:
+        #         # Vector result: include metadata
+        #         context_lines.append(f"{text}\nMetadata: {metadata}")
+        #     else:
+        #         # BM25 result: only text
+        #         context_lines.append(text)
+        # context = "\n".join(context_lines) 
 
-        ranked_chunks = rerank_results(query, top_chunks, top_k=5)
-        logger.info(f"Reranked top chunks: {ranked_chunks} results.")
+        # context = remove_markdown(context) 
 
-        # Build context: vector results with metadata, BM25 with just text
-        context_lines = []
-        for chunk in ranked_chunks:
-            text = chunk["text"]
-            metadata = chunk.get("metadata")
-            if metadata:
-                # Vector result: include metadata
-                context_lines.append(f"{text}\nMetadata: {metadata}")
-            else:
-                # BM25 result: only text
-                context_lines.append(text)
-        context = "\n".join(context_lines) 
 
-        context = remove_markdown(context) 
-
-        # enriched_query = f"You need to give correct response based on the query with the context and you have to look the answer in the context and you have to check metadata for relevancy if the context is not give the right info then you have to go for meta data answer \n\n{query}\n\nContext:\n{context}"
-#         enriched_query = (
-#     f"You must provide a correct response based on the query and the given context. "
-#     f"First, attempt to find the answer within the context. If the context does not provide sufficient or accurate information, "
-#     f"then use the metadata to determine the answer.\n\nQuery:\n{query}\n\nContext:\n{context}"
-# )
-        enriched_query = f"Answer the query using the context. If it's not helpful, refer to metadata.\n\nQuery:\n{query}\nContext:\n{context}"
+        enriched_query = f"Answer the query using the context and metadata.\n\nQuery:\n{query}\nContext:\n{filtered_vector_results}"
 
         logger.debug(f"Enriched query:\n{enriched_query}")
 
@@ -111,7 +123,7 @@ async def process_query(query: str) -> str:
         logger.error(f"❌ Error processing query: {str(e)}", exc_info=True)
         return "I'm sorry, I encountered an error while processing your query. Please try again later." 
 
-def run_bm25_keyword_search(query: str, top_n: int = 10) -> List[Dict]:
+async def run_bm25_keyword_search(query: str, top_n: int = 10) -> List[Dict]:
     """
     Performs keyword-based BM25 search using saved indexes from disk.
     Returns top-N results globally across all indexes.
@@ -123,7 +135,7 @@ def run_bm25_keyword_search(query: str, top_n: int = 10) -> List[Dict]:
         logger.warning(f"BM25 directory not found: {bm25_dir}")
         return []
 
-    keyword_tokens =  enrich_tokens(query)
+    keyword_tokens = await enrich_tokens(query)
     logger.debug(f"BM25 extracted keywords: {keyword_tokens}")
 
     for filename in os.listdir(bm25_dir):
@@ -161,21 +173,6 @@ def run_bm25_keyword_search(query: str, top_n: int = 10) -> List[Dict]:
 
 
 
-# def rerank_results(query: str, chunks: List[Dict], top_k: int = 5) -> List[Dict]:
-#     """
-#     Reranks chunks using a cross-encoder model based on relevance to the query.
-#     """
-#     if not chunks:
-#         return []
-
-#     pairs = [(query, chunk["text"]) for chunk in chunks]
-#     scores = reranker_model.predict(pairs)
-
-#     for i, score in enumerate(scores):
-#         chunks[i]["rerank_score"] = float(score)
-
-#     sorted_chunks = sorted(chunks, key=lambda x: x["rerank_score"], reverse=True)
-#     return sorted_chunks[:top_k] 
 
 
 def rerank_results(query: str, chunks: List[Dict], top_k: int = 3) -> List[Dict]:
