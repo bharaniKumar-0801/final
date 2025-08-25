@@ -1,0 +1,112 @@
+# version: '3.9'
+
+# services:
+#   backend:
+#     build: ./intuitiveobjects-rag-api
+#     ports:
+#       - "8888:8888"
+#     environment:
+#       - -OLLAMA_BASE_URL=http://ollama:11435
+#     env_file:
+#       - ./intuitiveobjects-rag-api/.env
+#     depends_on:
+#       - mongo_custom
+#       - ollama
+#     networks:
+#       - app-network
+
+#   frontend:
+#     build: ./intuitiveobjects-rag-ui
+#     ports:
+#       - "3030:3030"
+#     networks:
+#       - app-network
+
+#   mongo_custom:
+#     image: mongo
+#     container_name: mongo_custom
+#     ports:
+#       - "27018:27017"
+#     networks:
+#       - app-network
+#     volumes:
+#       - /home/bharani/final_version/contextual_rag_poc/mongo_storage:/data/db
+
+#   ollama:
+#     image: ollama/ollama
+#     container_name: name_ollama
+#     ports:
+#       - "11435:11434"
+#     command: serve
+#     networks:
+#       - app-network
+#     volumes:
+#       - /home/bharani/final_version/contextual_rag_poc/ollama_storage:/root/.ollama
+
+# networks:
+#   app-network:
+#     driver: bridge
+
+# # volumes:
+# #   mongo_data:
+# #   ollama_data:
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: ./intuitiveobjects-rag-api
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_URL=http://ollama:11434 # match Ollama’s internal port
+    env_file:
+      - ./intuitiveobjects-rag-api/.env
+    depends_on:
+      - mongodb
+      - ollama
+    networks:
+      - rag-network
+    volumes:
+      - ./intuitiveobjects-rag-api:/app # 👈 mount local code into container
+      - /app/__pycache__ # 👈 ignore compiled cache files
+
+  ui:
+    build: ./intuitiveobjects-rag-ui
+    ports:
+      - "3000:3000"
+    networks:
+      - rag-network
+    volumes:
+      - ./intuitiveobjects-rag-ui:/usr/src/app # 👈 hot-reload for UI code
+
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    ports:
+      - "27019:27017"
+    networks:
+      - rag-network
+    volumes:
+      - mongodb_data:/data/db
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11436:11434" # host:container (container listens on 11434)
+    command: serve
+    networks:
+      - rag-network
+    volumes:
+      - ollama_data:/root/.ollama
+
+    mem_limit: 12g # Limit memory usage to 16GB
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  ollama_data:
